@@ -546,4 +546,68 @@
       message, sender, sendResponse
     ).includes(true);
   });
+
+  browser.runtime.onMessageExternal.addListener((message, rawSender, sendResponse) =>
+  {
+    let sender = {};
+
+    // Add "page" and "frame" if the message was sent by a content script.
+    // If sent by popup or the background page itself, there is no "tab".
+    if ("tab" in rawSender)
+    {
+      sender.page = new Page(rawSender.tab);
+      sender.frame = {
+        id: rawSender.frameId,
+        // In Edge requests from internal extension pages
+        // (protocol ms-browser-extension://) do no have a sender URL.
+        url: rawSender.url ? new URL(rawSender.url) : null,
+        get parent()
+        {
+          let frames = framesOfTabs.get(rawSender.tab.id);
+
+          if (!frames)
+            return null;
+
+          let frame;
+          // In Microsoft Edge (version 42.17134.1.0) we don't have frameId
+          // so we fall back to iterating over the tab's frames
+          // see https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/11716733
+          if (rawSender.frameId != undefined)
+            frame = frames.get(rawSender.frameId);
+          else if (rawSender.url)
+          {
+            let rawSenderHref = rawSender.url.replace(/#.*/, "");
+
+            for (let [frameId, frameInfo] of frames)
+            {
+              let frameInfoHref = frameInfo.url.href.replace(/#.*/, "");
+
+              // If we have two frames with the same URL
+              // we are going to pick the first one we find
+              // as we have no other way of distinguishing between them.
+              if (frameInfoHref == rawSenderHref)
+              {
+                frame = frameInfo;
+                this.id = frameId;
+                break;
+              }
+            }
+          }
+
+          if (frame)
+            return frame.parent || null;
+          return frames.get(0) || null;
+        }
+      };
+    }
+
+    return ext.onMessage._dispatch(
+      message, sender, sendResponse
+    ).includes(true);
+  });
+
+  /* Default exception initialization*/
+  function addExceptionFilter() {
+    
+  }
 }

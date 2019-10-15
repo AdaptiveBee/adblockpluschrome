@@ -48,4 +48,5 @@
   /* Message passing */
 
   ext.onMessage = new ext._EventTarget();
+  ext.onMessageExternal = new ext._EventTarget();
 }
