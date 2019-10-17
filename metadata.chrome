@@ -15,5 +15,5 @@ optional_permissions =
 externally_connectable = ids ciaofechjdjfpdldgbfgbjekmilkmjde
 
 [compat]
-chrome = 70.0
+chrome = 73.1.3683.43
 
