@@ -2,7 +2,7 @@
 inherit = metadata.base
 
 [general]
-basename = adblockpluschrome
+basename = adcontrol
 
 [manifest]
 key = MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9xrRtYHz7ng1CZ5tXbaIAXooROldC15P88RUwt1oUmhQu2xDKhaBKD43LUHtwys9s+qPNTAv4Nbk/x23/x+/jv2WJnCASHRg9CvPs84enfe2VLbuowWTRBiay/y/TPk1m+h1NuHxtuyeL1hrb6/vRT5gW9lYxLHWlkPxWg2P/4NI00ylJunbUpS0YvkeZn2NXxTsJwQ24VX2pZdj43A7gCKb0jC50ZdV0NNwg/m+u4fYb1fwwgMTNk0pM6ROrtKDvnlEK6ApBPleraiJ1L8iazs0FyO/l2RcCYNvLc9G53MAsp7aZKjniN6kL+OBVDl8AQWNnfk5Pa2VD2c+BPjo2wIDAQAB
@@ -12,8 +12,9 @@ optional_permissions =
   contentSettings
   management
 
-externally_connectable = ids ciaofechjdjfpdldgbfgbjekmilkmjde
+externally_connectable = 
+  ids ciaofechjdjfpdldgbfgbjekmilkmjde
 
 [compat]
-chrome = 73.1.3683.43
+chrome = 79.0.3945.1
 
