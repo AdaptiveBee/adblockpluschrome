@@ -12,187 +12,213 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Adblock Plus.  If not, see <http://www.gnu.org/licenses/>.
-#
-# This file specifies how GitLab should run the tests, linting and other checks
-# automatically when merge requests are opened. By default, this will all run
-# on GitLab provided "shared runners", without further work. However, the tests
-# will run more quickly on a "specific runner" if you'd like to set that up.
-#
-# If you'd like to provision your own specific runners for your fork of the
-# repository, you can use these Ansible roles:
-#
-# https://gitlab.com/eyeo/devops/ansible-role-adblockplus-builder
-# https://gitlab.com/eyeo/devops/ansible-role-gitlab-runner
+
+---
+
+default:
+  image: "registry.gitlab.com/eyeo/docker/adblockplus-ci:node12"
 
 stages:
-  - prepare
-  - build
-  - test
-  - download
-  - scp
+  - "prepare"
+  - "build"
+  - "publish"
+  - "test"
 
-.dependencies:
-  script: &dependencies
-    # Since we already use the "before_script" in order to setup dependencies
-    # we must also install other dependencies here, which would have already
-    # been available on the specific runners. Unfortunately, YAML doesn't
-    # support proper mutli-inheritance, so we need to fallback to the following
-    # inline shell script.
-    - "[ -z $BROWSER_SNAPSHOT_DIR ] || mkdir -p $BROWSER_SNAPSHOT_DIR"
-    - |
-      if [[ "$CI_RUNNER_DESCRIPTION" == *gitlab.com ]]; then
-        apt-get update;
-        apt-get install -y apt-transport-https python-pip libgtk-3-0 libxt6 \
-          xvfb libnss3 libxss1 libgconf-2-4 libasound2 nodejs npm;
-      fi
-    - mkdir -p .git/info
-    - pip install --user Jinja2 cryptography fonttools brotli
-    # This pipeline runs on a custom runner as an unpriviliged user.
-    # Therefore the pyftsubset executable of the fonttools dependency above is
-    # installed to `~/.local/bin` and needs to be added to the $PATH variable
-    # in order to be available.
-    - export PATH=$PATH:~/.local/bin
-    - "npm_config_unsafe_perm=true python ensure_dependencies.py"
-    - "[ -d node_modules ] || npm install"
+variables:
+  GIT_SUBMODULE_STRATEGY: "recursive"
+  npm_config_audit: "false"
+  npm_config_prefer_offline: "true"
+  npm_config_unsafe_perm: "true"
 
-.pull_cache:
-  cache:
-    key: cache_$CI_COMMIT_SHA
+.cache:
+  cache: &cache
+    key: "global-cache"
+    untracked: true
     paths:
-      - ./
-    policy: pull
+      - "adblockpluscore/*-snapshots/download-cache/"
+      - "adblockpluscore/chromium-snapshots/chromedriver/"
+      - "adblockplusui/node_modules/"
 
-.test_template:
-  extends: .pull_cache
-  stage: test
-  before_script: *dependencies
-  variables:
-    BROWSER_SNAPSHOT_DIR: "/tmp/browser-snapshots/"
+.default_template:
+  needs:
+    - job: "prepare-dependencies"
+  before_script:
+    - "npm install"
   retry:
     max: 2
-    when: stuck_or_timeout_failure
-  artifacts:
-    paths:
-      - test/screenshots/
-    when: on_failure
+    when: "stuck_or_timeout_failure"
   except:
-    - schedules
-
-.build:
-  extends: .pull_cache
-  before_script: *dependencies
-  stage: build
-  only:
-    - master
-  except:
-    - schedules
-  script:
-    - python build.py build -t $PLATFORM
-  artifacts:
-    paths:
-      - adblockplusfirefox-*.xpi
-      - adblockpluschrome-*.zip
-      - adblockplusedge-*.appx
-
-lint:
-  extends: .test_template
-  script:
-    - npm run lint
-
-build:chrome:
-  extends: .build
-  variables:
-    PLATFORM: chrome
-
-build:gecko:
-  extends: .build
-  variables:
-    PLATFORM: gecko
-
-build:edge:
-  extends: .build
-  variables:
-    PLATFORM: edge
+    - "schedules"
+  cache:
+    <<: *cache
+    policy: "pull"
+  interruptible: true
 
 prepare-dependencies:
-  stage: prepare
-  script: *dependencies
-  cache:
-    key: cache_$CI_COMMIT_SHA
-    paths:
-      - ./
-    policy: push
+  stage: "prepare"
+  script:
+    - "git clean -x -d -ff"
+    - "git -C adblockpluscore clean -e '/*-snapshots' -x -d -ff"
+    - "git -C adblockplusui clean -x -d -ff"
+    - "npm install"
+    - "npm run download-test-browsers"
   except:
-    - schedules
+    - "schedules"
+  cache: *cache
+  interruptible: true
+
+###############################################################################
+#                               Build & document                              #
+###############################################################################
+
+.build:
+  extends: ".default_template"
+  stage: "build"
+  script:
+    - "npx gulp build -t $TARGET -c development"
+    - "npx gulp devenv -t $TARGET"
+
+build:chrome:
+  extends: ".build"
+  variables:
+    TARGET: "chrome"
+  artifacts:
+    paths:
+      - "adblockpluschrome-*.zip"
+      - "devenv.chrome/qunit/"
+
+build:firefox:
+  extends: ".build"
+  variables:
+    TARGET: "firefox"
+  artifacts:
+    paths:
+      - "adblockplusfirefox-*.xpi"
+      - "devenv.firefox/qunit/"
+
+build:source:
+  extends: ".build"
+  script:
+    - "npx gulp source -c development"
+  artifacts:
+    paths:
+      - "adblockplus-*.tar.gz"
 
 docs:
-  extends: .test_template
+  extends: ".default_template"
+  stage: "build"
   script:
-    - npm run docs
+    - "npm run docs"
   artifacts:
     paths:
-      - docs/
+      - "docs/"
+    expire_in: "1 week"
+
+###############################################################################
+#                                Tests & checks                               #
+###############################################################################
+
+.test_template:
+  extends: ".default_template"
+  stage: "test"
+  before_script:
+    - "npm install"
+    - "unzip -q $EXTENSION_FILE -d devenv.*"
+  variables:
+    SKIP_BUILD: "true"
+  artifacts:
+    paths:
+      - "test/screenshots/"
+    when: "on_failure"
+    expire_in: "1 mo"
+
+.test_template_chromium:
+  extends: ".test_template"
+  needs:
+    - job: "build:chrome"
+      artifacts: true
+  variables:
+    EXTENSION_FILE: "adblockpluschrome-*.zip"
+
+.test_template_firefox:
+  extends: ".test_template"
+  needs:
+    - job: "build:firefox"
+      artifacts: true
+  variables:
+    EXTENSION_FILE: "adblockplusfirefox-*.xpi"
+
+lint:yaml:
+  image: "registry.gitlab.com/eyeo/docker/yamllint:1.14.0-configured"
+  stage: "test"
+  needs: []
+  script:
+    - "yamllint .gitlab-ci.yml"
+  except:
+    - "schedules"
+  interruptible: true
+
+lint:js:
+  extends: ".default_template"
+  stage: "test"
+  script:
+    - "npm run lint"
+
+audit:
+  extends: ".default_template"
+  stage: "test"
+  script:
+    - "npm audit"
+  allow_failure: true
 
 test:firefox:oldest:
-  extends: .test_template
+  extends: ".test_template_firefox"
   script:
-    - npm run test-only -- -g 'Firefox \(oldest\)'
+    - "npm run test-only -- -g 'Firefox \\(oldest\\)'"
 
 test:firefox:latest:
-  extends: .test_template
+  extends: ".test_template_firefox"
   script:
-    - npm run test-only -- -g 'Firefox \(latest\)'
+    - "npm run test-only -- -g 'Firefox \\(latest\\)'"
 
 test:chromium:oldest:
-  extends: .test_template
+  extends: ".test_template_chromium"
   script:
-    - xvfb-run -a npm run test-only -- -g 'Chromium \(oldest\)'
+    - "xvfb-run -a npm run test-only -- -g 'Chromium \\(oldest\\)'"
 
 test:chromium:latest:
-  extends: .test_template
+  extends: ".test_template_chromium"
   script:
-    - xvfb-run -a npm run test-only -- -g 'Chromium \(latest\)'
+    - "xvfb-run -a npm run test-only -- -g 'Chromium \\(latest\\)'"
 
-.download:
-  stage: download
+test:edge:
+  extends: ".test_template_chromium"
+  before_script:
+    - "Expand-Archive -Path $EXTENSION_FILE -DestinationPath devenv.chrome"
+    - "choco upgrade -y nodejs --version=12.17.0"
+    - "choco install -y microsoft-edge --version=79.0.309.71"
+    - "npm install"
   script:
-    - npm install
-    - npm run archive -- $EXTENSION_ID
-  artifacts:
-    paths:
-      - adblockpluschrome-*.crx
-  only:
-    - schedules
-
-download:release:
-  extends: .download
-  variables:
-    EXTENSION_ID: "cfhdojbkjhnklbpkdaibdccddilifddb"
-
-download:devbuild:
-  extends: .download
-  variables:
-    EXTENSION_ID: "ldcecbkkoecffmfljeihcmifjjdoepkn"
-
-.scp:
-  stage: scp
-  only:
-    - schedules
+    - "npm run test-only -- -g 'Edge'"
   tags:
-    - protected
-  script:
-    - "scp *.crx $DESTINATION"
+    - shared-windows
+    - windows
+    - windows-1809
+  # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/25980
+  cache: null
 
-scp:release:
-  extends: .scp
-  dependencies:
-    - download:release
-  variables:
-    DESTINATION: "builds_user@eyeofiles.com:/var/adblockplus/fileserver/builds/releases/"
+###############################################################################
+#                                 Public pages                                #
+###############################################################################
 
-scp:devbuild:
-  extends: .scp
-  dependencies:
-    - download:devbuild
-  variables:
-    DESTINATION: "builds_user@eyeofiles.com:/var/adblockplus/fileserver/builds/devbuilds/adblockpluschrome/"
+.pages:
+  stage: "publish"
+  needs:
+    - job: "docs"
+      artifacts: true
+  except:
+    - "schedules"
+
+include:
+  project: "eyeo/adblockplus/adblockpluscore"
+  file: ".gitlab-pages.yml"

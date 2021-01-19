@@ -10,5 +10,19 @@
     "ext": true,
     "module": true,
     "require": true
-  }
+  },
+  "parserOptions": {
+    "ecmaVersion": 11
+  },
+  "rules": {
+    "curly": ["error", "multi-or-nest", "consistent"]
+  },
+  "overrides": [
+    {
+      "files": ["*.mjs"],
+      "parserOptions": {
+        "sourceType": "module"
+      }
+    }
+  ]
 }

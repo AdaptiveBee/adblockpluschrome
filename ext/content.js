@@ -1,7 +1,7 @@
 "use strict";
 
 // Workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=1408996
-let ext = window.ext;
+let ext = window.ext; // eslint-disable-line no-redeclare
 
 // Firefox 55 erroneously sends messages from the content script to the
 // devtools panel:
@@ -20,27 +20,40 @@ if (!browser.devtools)
 
 {
   let port = null;
+  let registeredListeners = null;
 
   ext.onExtensionUnloaded = {
     addListener(listener)
     {
       if (!port)
+      {
         port = browser.runtime.connect();
+        registeredListeners = 0;
+      }
 
-      // When the extension is reloaded, disabled or uninstalled the
-      // background page dies and automatically disconnects all ports
-      port.onDisconnect.addListener(listener);
+      if (!port.onDisconnect.hasListener(listener))
+      {
+        // When the extension is reloaded, disabled or uninstalled the
+        // background page dies and automatically disconnects all ports
+        port.onDisconnect.addListener(listener);
+        registeredListeners++;
+      }
     },
     removeListener(listener)
     {
       if (port)
       {
-        port.onDisconnect.removeListener(listener);
+        if (port.onDisconnect.hasListener(listener))
+        {
+          port.onDisconnect.removeListener(listener);
+          registeredListeners--;
+        }
 
-        if (!port.onDisconnect.hasListeners())
+        if (registeredListeners == 0)
         {
           port.disconnect();
           port = null;
+          registeredListeners = null;
         }
       }
     }

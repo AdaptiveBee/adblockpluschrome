@@ -17,13 +17,11 @@
 
 "use strict";
 
+const {extractHostFromFrame} = require("../../lib/url");
+
+QUnit.module("URL/host tools", () =>
 {
-  const {extractHostFromFrame} = require("../../lib/url");
-  const {platform} = require("info");
-
-  QUnit.module("URL/host tools");
-
-  test("Extracting hostname from frame", () =>
+  QUnit.test("Extracting hostname from frame", assert =>
   {
     function testFrameHostname(hierarchy, expectedHostname, message)
     {
@@ -32,7 +30,7 @@
       for (let url of hierarchy)
         frame = {parent: frame, url: new URL(url)};
 
-      equal(extractHostFromFrame(frame), expectedHostname, message);
+      assert.equal(extractHostFromFrame(frame), expectedHostname, message);
     }
 
     testFrameHostname(["http://example.com/"], "example.com", "single frame");
@@ -44,19 +42,9 @@
                       "example.com", "about:blank, hostname in ancestor");
     testFrameHostname(["about:blank", "about:blank"], "",
                       "about:blank, no hostname");
-
-    // Currently there are two bugs in Microsoft Edge (EdgeHTML 17.17134)
-    // that would make this two assertions fail,
-    // so for now we are not running them on this platform.
-    // See:
-    // with punycode: https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/18861990/
-    // with auth credentials: https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/8004284/
-    if (platform != "edgehtml")
-    {
-      testFrameHostname(["http://xn--f-1gaa.com/"], "xn--f-1gaa.com",
-                        "with punycode");
-      testFrameHostname(["http://user:password@example.com/"], "example.com",
-                        "with auth credentials");
-    }
+    testFrameHostname(["http://xn--f-1gaa.com/"], "xn--f-1gaa.com",
+                      "with punycode");
+    testFrameHostname(["http://user:password@example.com/"], "example.com",
+                      "with auth credentials");
   });
-}
+});
