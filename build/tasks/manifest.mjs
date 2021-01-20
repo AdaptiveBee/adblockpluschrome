@@ -24,9 +24,6 @@ let manifest;
 
 function editManifest(data, version, channel, target)
 {
-  data.version = version;
-  data.name = `__MSG_name_${channel == "development" ? "dev" : channel}build__`;
-
   if (target == "chrome")
     delete data.applications;
 
